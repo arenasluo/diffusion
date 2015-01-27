@@ -1,0 +1,63 @@
+AdvancedCalibration 2011.09
+
+#SiGe 1D
+#header 
+set DEBUG 1
+pdbSet ImplantData DoseControl WaferDose
+#endheader
+
+math coord.ucs
+#----------------------------------------------------------------------#
+
+mgoals on min.normal.size= 5<nm> accuracy= 0.2<nm> \ 
+       normal.growth.ratio= 1.5 
+refinebox name= Interface \
+           min.normal.size= 1<nm> \
+           interface.materials= "Silicon" \
+           min= "-0.01 0.2" max= "+0.01 1.0"     
+refinebox name= All min= "-1 0" max= "1 1" \
+           xrefine= "0.01 0.001 0.01" yrefine= "0.1" add all
+           
+#----------------------------------------------------------------------#
+       
+line x   location= -0.01   spacing= 0.01
+line x   location= 0.05    spacing= 0.001   tag= sitop
+line x   location= 0.4     spacing= 0.001    tag= sibot
+line y   location= 0       spacing= 0.5     tag= left
+line y   location= 1       spacing= 0.5     tag= right
+
+region   substrate silicon xlo= sitop xhi= sibot ylo= left yhi= right
+init     field= phosphorus concentration= 1e15 !DelayFullD
+
+#----------------------------------------------------------------------#
+#split @SiGe_C@
+
+deposit  material= {Silicon} type= isotropic rate= {1.0} time= 0.2
+
+#-Setting Carbon profile in newly deposited SiGe layer
+profile  name=Carbon  infile = Ca1_C.txt
+
+#deposit  material= {Oxide} type= isotropic   rate= {1.0}  time= 0.02
+
+if { $DEBUG } {
+ SetPlxList { Carbon }
+ WritePlx n@node@_as_grown.plx  y= 0.5
+}
+#----------------------------------------------------------------------#
+#split @RTA@
+
+pdbSet silicon Dopant DiffModel ChargedPair
+#pdbSet silicon Carbon DiffModel NeutralReact
+pdbSet silicon Carbon ActiveModel NeutralCluster
+
+
+diffuse time=10 temp=920
+
+profile  name=Cannealed  infile = Ca2_C.txt
+
+if { $DEBUG } {
+ SetPlxList { Carbon Ctotal Cannealed C2 C2I C3I2 C4I3}
+ WritePlx n@node@_SiGe_RTA.plx  y=0.5
+}
+
+struct tdr= n@node@
