@@ -1,0 +1,138 @@
+$ This code has DrDc model to simulatin SiGe interdiffusion
+$ it takes as-grown SIMS data as input, simulates and compares annealed data vs. model prediction
+$ It may also include dopant diffusion
+$ Set the filenames and annealing parameters
+
+assign name=T n.val=1000
+assign name=AnnealTime n.val=70/60
+assign name=Gefactor n.val=1.0
+assign name=Cfactor  n.val=0.02 
+assign name=XgeSubstrate n.val=0.00
+
+assign name=GeInput     c.val=MA-R_Ge_cut.txt
+assign name=GeAnnealed  c.val=MBA_Ge.txt
+assign name=PInput      c.val=MA-R_P_cut.txt
+assign name=PAnnealed   c.val=MBA_P.txt
+assign name=CInput      c.val=MA-R_C_cut.txt
+assign name=CAnnealed   c.val=MBA_C.txt
+
+$-------------define mesh -----------------------
+line x loc=0        spacing=0.001
+line x loc=0.01     spacing=0.01
+
+
+line y loc=0	      spacing=0.001
+line y loc=0.06     spacing=0.0002
+line y loc=0.16     spacing=0.0002
+line y loc=0.23     spacing=0.001
+
+init boron=1e15 material=silicon
+
+method st.histo ^skip.sil viscoela 
+method PD.5STR
+method ^dif.adap
+
+$--------------------------------------------------
+
+select z=1 title='mesh'
+plot.2d grid x.min=-0.01 x.max=0.01 y.min=0 y.max=0.20 c.grid=2
+
+$---------------------------------------
+$$This plot is effective
+$ Define Ge as new impurity and method
+impurity name=Ge new
+method variable=Ge none abs.err=0.1
+
+profile  impurity=Ge inf=@GeInput
+select   z=Ge title='DrDc modeling T=@T C @AnnealTime mins '
+PLOT.1D  x.min=0.00 x.max=0.25 y.min=0  y.max=1.5e22 LINE.TYP=2  COLOR=1
+
+$ ---- define interdiffusion model and parameters
+
+intermed name=Xge express=Ge/5e22
+intermed name=Xge0 value=@XgeSubstrate
+intermed name=b1 value=8.1
+intermed name=b2 value=23
+intermed name=D00 value=310*@Gefactor
+intermed name=Eav value=4.66
+intermed name=D01 express=D00*exp(-Eav/kT)
+
+intermed name=D02 value=D01*exp(b1*Xge0)
+intermed name=D express=(Xge<=Xge0 ? D01*exp(b1*Xge):D02*exp(b2*(Xge-Xge0)))
+
+equation variable=Ge mat=Si addtoexp=DIV(D*GRAD(Ge))
+
+$------------------------------------------
+
+$ Define C Model
+$impurity name=Cnew new
+$method variable=Cnew none abs.err=0.1
+PROFILE    impurity=carbon    IN.FILE=@CInput 
+SELECT     Z=LOG10(carbon)
+PLOT.1D    ^CLEAR x.min=0.00 x.max=0.25 y.min=16  y.max=20 LINE.TYP=2  COLOR=2
+IMPURITY IMP=CARBON MAT=SILICON MODEL=Cscale DI.FAC=@Cfactor
+METHOD   MODEL=Cscale ENABLE
+
+
+$ ---- load and plot initial profile
+
+PROFILE    PHOSPH    IN.FILE=@PInput 
+SELECT     Z=LOG10(PHOSPHORUS)
+PLOT.1D    ^CLEAR x.min=0.00 x.max=0.25 y.min=16  y.max=20 LINE.TYP=2  COLOR=6
+SELECT    Z=LOG10(INTERSTITIAL)
+PLOT.1D  ^CLEAR x.min=0.00 x.max=0.25 y.min=13 y.max=16   LINE.TYP=1  COLOR=5
+
+
+$ ---- here is the diffusion process step 
+
+$diffusion temp=400 t.final=@T time=(@T-400)/100/60 inert
+diffusion temp=@T time=@AnnealTime inert 
+$diffusion temp=@T t.final=400 time=(@T-400)/100/60 inert
+
+
+
+$ ---- plot the diffused profile on top of the initial profile
+SELECT   Z=Ge
+PLOT.1D  ^CLEAR x.min=0.00 x.max=0.25 y.min=0 y.max=1.5e22   LINE.TYP=3  COLOR=1
+SELECT   Z=LOG10(PHOSPHORUS)
+PLOT.1D  ^CLEAR x.min=0.00 x.max=0.25 y.min=16 y.max=20   LINE.TYP=3  COLOR=2
+SELECT   Z=LOG10(CARBON)
+PLOT.1D  ^CLEAR x.min=0.00 x.max=0.25 y.min=16 y.max=20   LINE.TYP=3  COLOR=4
+
+
+label x=0.13 y=19.3  label="Cscale = @Cfactor"   
+label x=0.13 y=18.8  label="Local Carbon Effect KGe"  
+label x=0.13 y=19.8  label="T = @T C"  
+label x=0.13 y=18.5  label="DrDc X @Gefactor"             
+label x=0.13 y=18.3  label="Time = @AnnealTime mins" 
+
+
+SELECT     Z=PHOSPHORUS
+PRINT.1D   X.VAL=0 X.MAX=0.22 OUT.FILE=MA-R_cut+C+FI-P-@T-@AnnealTime-min-CDIFAC=@Cfactor-Gefactor=@Gefactor-pd.5str.txt
+SELECT     Z=CARBON
+PRINT.1D   X.VAL=0 X.MAX=0.22 OUT.FILE=MA-R_cut+C+FI-C-@T-@AnnealTime-min-CDIFAC=@Cfactor-Gefactor=@Gefactor-pd.5str.txt
+SELECT     Z=Ge/5e20
+PRINT.1D   X.VAL=0 X.MAX=0.22 OUT.FILE=MA-R_cut+C+FI-Ge-@T-@AnnealTime-min-CDIFAC=@Cfactor-Gefactor=@Gefactor-pd.5str.txt
+
+$STOP
+$-------------------------------------------------------------------------------------------
+$ ---- load SIMS data of annealed sample, and overlay with initial and simulation profiles
+
+PROFILE   IMPURITY=Ge   IN.FILE=@GeAnnealed replace
+SELECT    Z=Ge
+PLOT.1D   ^CLEAR x.min=0.00 x.max=0.25 y.min=0  y.max=1.5e22 LINE.TYP=1  COLOR=1
+
+PROFILE   PHOSPHORUS    IN.FILE=@PAnnealed replace
+SELECT    Z=LOG10(PHOSPHORUS)
+PLOT.1D   ^CLEAR x.min=0.00 x.max=0.25 y.min=16  y.max=20 LINE.TYP=1  COLOR=2
+
+PROFILE   IMPURITY=CARBON    IN.FILE=@CAnnealed replace
+SELECT    Z=LOG10(CARBON)
+PLOT.1D   ^CLEAR x.min=0.00 x.max=0.25 y.min=16  y.max=20 LINE.TYP=1  COLOR=3
+SELECT    Z=LOG10(INTERSTITIAL)
+PLOT.1D  ^CLEAR x.min=0.00 x.max=0.25 y.min=13 y.max=16   LINE.TYP=1  COLOR=5
+label x=0.14 y=17.5  label="Annealed SIMS"            c.line=4 line.typ=1
+
+label x=0.013 y=.4e22 label="SIMS data annealed"      c.line=4 line.typ=1
+
+
