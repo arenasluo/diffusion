@@ -1,0 +1,76 @@
+$ This code has DrDc model to simulatin SiGe interdiffusion
+$ it takes as-grown SIMS data as input, simulates and compares annealed data vs. model prediction
+$ It may also include dopant diffusion
+$ Set the filenames and annealing parameters
+
+assign name=T n.val=900
+assign name=AnnealTime n.val=10
+
+assign name=CInput         c.val=Ca1_C.txt
+assign name=Cannealed      c.val=Ca2_C.txt
+
+
+$-------------define mesh -----------------------
+line x loc=0        spacing=0.01
+line x loc=0.01     spacing=0.01
+
+line y loc=0	      spacing=0.001
+line y loc=0.1     spacing=0.0002
+line y loc=0.3     spacing=0.0002
+line y loc=0.4     spacing=0.001
+
+init boron=1e15 material=silicon
+
+method st.histo ^skip.sil viscoela 
+method PD.FERMI
+method ^dif.adap
+
+$--------------------------------------------------
+
+select z=1 title='mesh'
+plot.2d grid x.min=-0.01 x.max=0.01 y.min=0 y.max=0.20 c.grid=2
+
+
+$------------------------------------------
+
+$ Load Carbon Profile
+PROFILE    impurity=CARBON   IN.FILE=@CInput 
+SELECT     Z=LOG10(CARBON)
+PLOT.1D    x.min=0.00 x.max=0.25 y.min=16  y.max=21 LINE.TYP=1  COLOR=1
+intermed  name=XCarbon  express=CARBON/5e22
+$Intermed NAME=Ctry express=(1+XCarbon/0.000000002)
+Intermed NAME=Ctry express=50
+IMPURITY IMP=CARBON MAT=SILICON MODEL=Cscale DI.FAC=Ctry
+METHOD   MODEL=Cscale ENABLE
+
+SELECT    Z=LOG10(INTERSTITIAL)
+PLOT.1D   x.min=0.00 x.max=0.25 y.min=13 y.max=18   LINE.TYP=1  COLOR=4
+
+
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+IMPURITY NAME=Cnew NEW 
+PROFILE   impurity=Cnew    IN.FILE=@Cannealed 
+SELECT    Z=LOG10(Cnew)
+PLOT.1D  ^CLEAR x.min=0.00 x.max=0.25 y.min=13 y.max=18   LINE.TYP=1  COLOR=4
+
+label x=0.13 y=18.5  label="T = @T C"               
+label x=0.13 y=18.3  label="Time = @AnnealTime mins" 
+
+
+SELECT     Z=CARBON
+PRINT.1D   X.VAL=0 X.MAX=0.22 OUT.FILE=Ca10212PDFERMI-@T-@AnnealTime-min-pd.full.txt
+
+$ ---- here is the diffusion process step 
+
+diffusion temp=@T time=@AnnealTime inert 
+
+
+$ ---- plot the diffused profile on top of the initial profile
+
+SELECT   Z=LOG10(carbon)
+PLOT.1D  ^CLEAR x.min=0.00 x.max=0.25 y.min=13 y.max=18   LINE.TYP=1  COLOR=2
+
+SELECT    Z=LOG10(INTERSTITIAL)
+PLOT.1D  ^CLEAR x.min=0.00 x.max=0.25 y.min=13 y.max=18   LINE.TYP=1  COLOR=3
+
+
