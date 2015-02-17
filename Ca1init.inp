@@ -1,0 +1,115 @@
+$ This code has DrDc model to simulatin SiGe interdiffusion
+$ it takes as-grown SIMS data as input, simulates and compares annealed data vs. model prediction
+$ It may also include dopant diffusion
+$ Set the filenames and annealing parameters
+
+assign name=T n.val=900
+$assign name=AnnealTime n.val=10
+assign name=AnnealTime n.val=5
+
+assign name=CInput         c.val=Ca1_C.txt
+assign name=Cannealed      c.val=Ca2_C.txt
+
+
+$-------------define mesh -----------------------
+line x loc=0        spacing=0.01
+line x loc=0.01     spacing=0.01
+
+line y loc=0	      spacing=0.001
+line y loc=0.1     spacing=0.0002
+line y loc=0.3     spacing=0.0002
+line y loc=0.4     spacing=0.001
+
+init boron=1e15 material=silicon
+
+method st.histo ^skip.sil viscoela 
+method ddc.full
+method advanced
+method ^dif.adap
+method PRECOND=2
+$method PD.FULL
+$--------------------------------------------------
+
+select z=1 title='mesh'
+plot.2d grid x.min=-0.01 x.max=0.01 y.min=0 y.max=0.20 c.grid=2
+
+
+$ Load Carbon Profile(AS GROWN)
+PROFILE    impurity=CARBON   IN.FILE=@CInput 
+SELECT     Z=LOG10(CARBON)
+PLOT.1D    x.min=0.00 x.max=0.25 y.min=13  y.max=21 LINE.TYP=1  COLOR=1
+intermed  name=XCarbon  express=CARBON/5e22
+Intermed NAME=Ctry express=(1+XCarbon/0.002)
+$Intermed NAME=Ctry express=50
+IMPURITY IMP=CARBON MAT=SILICON MODEL=Cscale DI.FAC=Ctry
+METHOD   MODEL=Cscale ENABLE
+
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+IMPURITY NAME=Cnew NEW 
+PROFILE   impurity=Cnew    IN.FILE=@Cannealed 
+SELECT    Z=LOG10(Cnew)
+PLOT.1D  ^CLEAR x.min=0.00 x.max=0.25 y.min=13 y.max=21   LINE.TYP=1  COLOR=4
+
+label x=0.13 y=18.5  label="T = @T C"               
+label x=0.13 y=18.3  label="Time = @AnnealTime mins" 
+
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+SELECT     Z=CARBON
+PRINT.1D   X.VAL=0 X.MAX=0.22 OUT.FILE=Ca1init-@T-@AnnealTime-min-pd.full.txt
+
+$-----------------------------------------------------------------------------------------
+$ ---- here is the diffusion process step 
+method .s4advanced
+method PRECOND=2
+
+$ carbon
+impurity new imp=ipair_carbon tif.name=CIpair
+impurity imp=carbon neutral imp.ip=ipair_carbon
+method   imp=carbon lu part ^symm time.ste rel.err=0.01 abs.err=1.0e9 temp.min=450
+method   imp=ipair_carbon lu full ^symm time.ste rel.err=0.01 abs.err=1.0e7 temp.min=450
+
+impurity imp=carbon mat=silicon dipair.0=0.44 dipair.e=2.5 cm.sec +
+         dix.0=6.11 dix.e=3.293 r.i.s=0.1221 e.i.s=-0.269 r.ip.v=0.0 r.v.s=0.0 r.vp.i=0.0
+
+$ carbon clusters
+impurity imp=c2i1 tif.name=C2I new neutral
+method   imp=c2i1 lu none ^symm time.ste rel.err=0.01 abs.err=1e7
+impurity imp=c3i2 tif.name=C3I2 new neutral
+method   imp=c3i2 lu none ^symm time.ste rel.err=0.01 abs.err=1e7
+impurity imp=c3i3 tif.name=C3I3 new neutral
+method   imp=c3i3 lu none ^symm time.ste rel.err=0.01 abs.err=1e7
+
+$ initial conditions
+impurity imp=carbon mat=silicon ddctot.c=1.0 ddctot.a=0.0 act.amor=5.e22
+impurity imp=carbon imp.ddc=c2i1 ddc.n.d=2 ddc.n.i=1 ddcluster=c2i1 ddcfraca=0.0 ddcfracc=0.0
+impurity imp=carbon imp.ddc=c3i2 ddc.n.d=3 ddc.n.i=2 ddcluster=c3i2 ddcfraca=0.0 ddcfracc=1.0
+impurity imp=carbon imp.ddc=c3i3 ddc.n.d=3 ddc.n.i=3 ddcluster=c3i3 ddcfraca=0.0 ddcfracc=0.0
+
+$ reactions
+$ Cs + CI <-> C2I
+impurity imp=carbon mat=silicon ddcluster=c2i1 ip.ddc c.ip.all +
+         ddc.kf.0=1.498e-7 ddc.kf.e=2.5 +
+         ddc.kr.0=5.395e14 ddc.kr.e=2.207 cm.sec
+$ C2I + CI <-> C3I2
+impurity imp=carbon mat=silicon ddcluster=c3i2 ip.ddc c.ip.all +
+         ddc.kf.0=1.498e-7 ddc.kf.e=2.5 +
+         ddc.kr.0=5.395e14 ddc.kr.e=4.207 cm.sec
+$ C3I3 + V <-> C3I2
+impurity imp=carbon mat=silicon ddcluster=c3i2 v.ddc c.v.all +
+         ddc.kf.0=1.022e-8  ddc.kf.e=1.8 +
+         ddc.kr.0=3.332e-10 ddc.kr.e=1.16 cm.sec
+
+diffusion temp=@T time=@AnnealTime inert 
+
+
+$ ---- plot the diffused profile on top of the initial profile
+
+SELECT   Z=LOG10(carbon)
+PLOT.1D  ^CLEAR x.min=0.00 x.max=0.25 y.min=13 y.max=21   LINE.TYP=1  COLOR=2
+
+
+
+
+
